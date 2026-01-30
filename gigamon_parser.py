@@ -4,16 +4,21 @@ Gigamon 'show diag' Parser
 Parses Gigamon diagnostic files to extract port inventory information.
 """
 
+import argparse
 import re
 import sys
 
-def parse_gigamon_diag(file_path):
+def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
     """
     Parses a Gigamon 'show diag' file to extract port inventory.
+    
+    Args:
+        file_path: Path to the show diag file
+        output_format: 'table', 'csv', or 'json'
+        show_summary: Whether to print summary counts
     """
     
     # Dictionaries to store data
-    # Key = Port ID (e.g., "1/1/x1")
     port_aliases = {}
     port_data = {}
 
@@ -21,13 +26,10 @@ def parse_gigamon_diag(file_path):
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             lines = f.readlines()
     except FileNotFoundError:
-        print(f"Error: File '{file_path}' not found.")
-        return
+        print(f"Error: File '{file_path}' not found.", file=sys.stderr)
+        sys.exit(1)
 
     # --- STEP 1: Parse Running Config for Full Aliases ---
-    # We do this because the 'Port Params' table often truncates long aliases.
-    # We look for lines like: port 1/1/x1 alias My_Long_Alias_Name
-    
     in_running_config = False
     alias_pattern = re.compile(r'^\s*port\s+([0-9]+/[0-9]+/[a-z0-9]+)\s+alias\s+(.+)')
     
@@ -39,27 +41,19 @@ def parse_gigamon_diag(file_path):
             match = alias_pattern.match(line)
             if match:
                 port_id = match.group(1)
-                alias = match.group(2).strip().replace('"', '') # Remove quotes if present
+                alias = match.group(2).strip().replace('"', '')
                 port_aliases[port_id] = alias
 
     # --- STEP 2: Parse Port Parameters Table ---
-    # This section contains Speed, Type, Status, and SFP info.
-    # The table is transposed (columns are ports), so we parse blocks.
-
     current_ports = []
-    
-    # Regex to find the header row of a block (e.g., "Parameter  1/1/x1  1/1/x2")
     header_pattern = re.compile(r'^\s*Parameter\s+(1/\d+/\S+.*)')
     
     for line in lines:
         line = line.strip()
         
-        # Detect Header Row
         match = header_pattern.match(line)
         if match:
-            # Split by multiple spaces to get port IDs
             current_ports = re.split(r'\s{2,}', match.group(1))
-            # Initialize these ports in our dictionary
             for p in current_ports:
                 if p not in port_data:
                     port_data[p] = {
@@ -71,12 +65,9 @@ def parse_gigamon_diag(file_path):
                     }
             continue
 
-        # Skip separator lines
         if line.startswith("=") or not current_ports:
             continue
 
-        # Extract Attributes based on row label
-        # We split the line by 2+ spaces. Index 0 is label, 1..N are values
         parts = re.split(r'\s{2,}', line)
         
         if len(parts) < 2: 
@@ -85,7 +76,6 @@ def parse_gigamon_diag(file_path):
         label = parts[0].replace(":", "").strip()
         values = parts[1:]
 
-        # specific mappings
         if label == "Type":
             for i, val in enumerate(values):
                 if i < len(current_ports):
@@ -100,7 +90,6 @@ def parse_gigamon_diag(file_path):
             for i, val in enumerate(values):
                 if i < len(current_ports):
                     speed_val = val
-                    # Format Speed
                     if val == "1000": speed_val = "1Gb"
                     elif val == "10000": speed_val = "10Gb"
                     elif val == "40000": speed_val = "40Gb"
@@ -113,7 +102,6 @@ def parse_gigamon_diag(file_path):
                     sfp_val = val
                     port_data[current_ports[i]]["SFP"] = sfp_val
                     
-                    # Determine Media Type Logic
                     media = "Unknown"
                     val_lower = val.lower()
                     
@@ -126,44 +114,111 @@ def parse_gigamon_diag(file_path):
                     elif val_lower in ["none", "n/a", "(unsupported)"]:
                         media = "No Module"
                     else:
-                        media = val # Fallback
+                        media = val
                         
                     port_data[current_ports[i]]["Media"] = media
 
-    # --- STEP 3: Formatting Output ---
+    # --- STEP 3: Output ---
     
-    print(f"{'Port':<10} {'Type':<12} {'Alias':<35} {'Status':<10} {'Speed':<8} {'Media':<15}")
-    print("-" * 95)
-
-    # Sort ports naturally (x1, x2, x10 instead of x1, x10, x2)
     def natural_keys(text):
         return [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', text)]
 
-    for port in sorted(port_data.keys(), key=natural_keys):
-        data = port_data[port]
-        
-        # Merge the alias we found in config, or use "-"
-        alias = port_aliases.get(port, "-")
-        
-        # Capitalize status
-        status = data["Admin"].capitalize()
-        
-        # Clean up Type (remove extra info like (T))
-        p_type = data["Type"].replace("(T)", "")
-
-        print(f"{port:<10} {p_type:<12} {alias:<35} {status:<10} {data['Speed']:<8} {data['Media']:<15}")
-
-    # --- Summary Counts ---
-    print("\n--- Summary ---")
-    enabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "enabled")
-    disabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "disabled")
+    sorted_ports = sorted(port_data.keys(), key=natural_keys)
     
-    print(f"Total Ports Found: {len(port_data)}")
-    print(f"Enabled: {enabled_count}")
-    print(f"Disabled: {disabled_count}")
+    if output_format == 'json':
+        import json
+        output = []
+        for port in sorted_ports:
+            data = port_data[port]
+            output.append({
+                "port": port,
+                "type": data["Type"].replace("(T)", ""),
+                "alias": port_aliases.get(port, ""),
+                "status": data["Admin"].capitalize(),
+                "speed": data["Speed"],
+                "media": data["Media"]
+            })
+        print(json.dumps(output, indent=2))
+        
+    elif output_format == 'csv':
+        print("Port,Type,Alias,Status,Speed,Media")
+        for port in sorted_ports:
+            data = port_data[port]
+            alias = port_aliases.get(port, "").replace(",", ";")
+            p_type = data["Type"].replace("(T)", "")
+            status = data["Admin"].capitalize()
+            print(f'{port},{p_type},"{alias}",{status},{data["Speed"]},{data["Media"]}')
+            
+    else:  # table format
+        print(f"{'Port':<10} {'Type':<12} {'Alias':<35} {'Status':<10} {'Speed':<8} {'Media':<15}")
+        print("-" * 95)
+
+        for port in sorted_ports:
+            data = port_data[port]
+            alias = port_aliases.get(port, "-")
+            status = data["Admin"].capitalize()
+            p_type = data["Type"].replace("(T)", "")
+            print(f"{port:<10} {p_type:<12} {alias:<35} {status:<10} {data['Speed']:<8} {data['Media']:<15}")
+
+    # --- Summary ---
+    if show_summary and output_format == 'table':
+        print("\n--- Summary ---")
+        enabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "enabled")
+        disabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "disabled")
+        
+        print(f"Total Ports Found: {len(port_data)}")
+        print(f"Enabled: {enabled_count}")
+        print(f"Disabled: {disabled_count}")
+    
+    return port_data
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog='gigamon-parser',
+        description='Parse Gigamon "show diag" files to extract port inventory',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+  %(prog)s show_diag.txt                    # Default table output
+  %(prog)s show_diag.txt --format csv       # CSV output
+  %(prog)s show_diag.txt --format json      # JSON output
+  %(prog)s show_diag.txt --no-summary       # Hide summary counts
+        '''
+    )
+    
+    parser.add_argument(
+        'file',
+        help='Path to the Gigamon show diag file'
+    )
+    
+    parser.add_argument(
+        '-f', '--format',
+        choices=['table', 'csv', 'json'],
+        default='table',
+        help='Output format (default: table)'
+    )
+    
+    parser.add_argument(
+        '--no-summary',
+        action='store_true',
+        help='Hide the summary counts'
+    )
+    
+    parser.add_argument(
+        '-v', '--version',
+        action='version',
+        version='%(prog)s 1.0.0'
+    )
+    
+    args = parser.parse_args()
+    
+    parse_gigamon_diag(
+        file_path=args.file,
+        output_format=args.format,
+        show_summary=not args.no_summary
+    )
+
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python gigamon_parser.py <log_file>")
-    else:
-        parse_gigamon_diag(sys.argv[1])
+    main()
