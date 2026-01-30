@@ -177,7 +177,8 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
                 "port": port,
                 "type": data["Type"].replace("(T)", ""),
                 "alias": port_aliases.get(port, ""),
-                "status": data["Admin"].capitalize(),
+                "admin_status": data["Admin"].capitalize(),
+                "link_status": data.get("Link", "N/A").capitalize(),
                 "speed": data["Speed"],
                 "media": data["Media"],
                 "rx_util_pct": round(rx_util, 4),
@@ -186,35 +187,42 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
         print(json.dumps(output, indent=2))
         
     elif output_format == 'csv':
-        print("Port,Type,Alias,Status,Speed,Media,RxUtil%,TxUtil%")
+        print("Port,Type,Alias,Admin Status,Link Status,Speed,Media,RxUtil%,TxUtil%")
         for port in sorted_ports:
             data = port_data[port]
             alias = port_aliases.get(port, "").replace(",", ";")
             p_type = data["Type"].replace("(T)", "")
-            status = data["Admin"].capitalize()
+            admin_status = data["Admin"].capitalize()
+            link_status = data.get("Link", "N/A").capitalize()
             
             rx_util = calc_util(data["RxRate"], data["Speed"])
             tx_util = calc_util(data["TxRate"], data["Speed"])
             
-            print(f'{port},{p_type},"{alias}",{status},{data["Speed"]},{data["Media"]},{rx_util:.4f},{tx_util:.4f}')
+            print(f'{port},{p_type},"{alias}",{admin_status},{link_status},{data["Speed"]},{data["Media"]},{rx_util:.4f},{tx_util:.4f}')
         
         # Add summary rows
         enabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "enabled")
         disabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "disabled")
+        link_up_count = sum(1 for p in port_data.values() if p.get("Link", "").lower() == "up")
+        link_down_count = sum(1 for p in port_data.values() if p.get("Link", "").lower() == "down")
+        
         print("")
-        print(f"SUMMARY,,,,,,,")
-        print(f"Total Ports,{len(port_data)},,,,,,")
-        print(f"Enabled,{enabled_count},,,,,,")
-        print(f"Disabled,{disabled_count},,,,,,")
+        print(f"SUMMARY,,,,,,,,")
+        print(f"Total Ports,{len(port_data)},,,,,,,")
+        print(f"Admin Enabled,{enabled_count},,,,,,,")
+        print(f"Admin Disabled,{disabled_count},,,,,,,")
+        print(f"Link Up,{link_up_count},,,,,,,")
+        print(f"Link Down,{link_down_count},,,,,,,")
             
     else:  # table format
-        print(f"{'Port':<10} {'Type':<12} {'Alias':<30} {'Status':<8} {'Speed':<6} {'Media':<10} {'RxUtil%':<8} {'TxUtil%':<8}")
-        print("-" * 105)
+        print(f"{'Port':<10} {'Type':<12} {'Alias':<30} {'Admin':<8} {'Link':<8} {'Speed':<6} {'Media':<10} {'RxUtil%':<8} {'TxUtil%':<8}")
+        print("-" * 115)
 
         for port in sorted_ports:
             data = port_data[port]
             alias = port_aliases.get(port, "-")
-            status = data["Admin"].capitalize()
+            admin_status = data["Admin"].capitalize()
+            link_status = data.get("Link", "N/A").capitalize()
             p_type = data["Type"].replace("(T)", "")
             
             rx_util = calc_util(data["RxRate"], data["Speed"])
@@ -223,17 +231,18 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             rx_str = f"{rx_util:.2f}%" if rx_util > 0 else "0%"
             tx_str = f"{tx_util:.2f}%" if tx_util > 0 else "0%"
 
-            print(f"{port:<10} {p_type:<12} {alias:<30} {status:<8} {data['Speed']:<6} {data['Media']:<10} {rx_str:<8} {tx_str:<8}")
+            print(f"{port:<10} {p_type:<12} {alias:<30} {admin_status:<8} {link_status:<8} {data['Speed']:<6} {data['Media']:<10} {rx_str:<8} {tx_str:<8}")
 
     # --- Summary ---
     if show_summary and output_format == 'table':
         print("\n--- Summary ---")
         enabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "enabled")
         disabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "disabled")
+        link_up_count = sum(1 for p in port_data.values() if p.get("Link", "").lower() == "up")
         
-        print(f"Total Ports Found: {len(port_data)}")
-        print(f"Enabled: {enabled_count}")
-        print(f"Disabled: {disabled_count}")
+        print(f"Total Ports:    {len(port_data)}")
+        print(f"Admin Enabled:  {enabled_count}")
+        print(f"Link Up:        {link_up_count}")
     
     return port_data
 
