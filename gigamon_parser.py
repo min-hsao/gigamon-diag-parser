@@ -71,7 +71,7 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             
         label = parts[0].replace(":", "").strip()
         values = parts[1:]
-
+        
         if label == "Type":
             for i, val in enumerate(values):
                 if i < len(current_ports):
@@ -80,6 +80,10 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             for i, val in enumerate(values):
                 if i < len(current_ports):
                     port_data[current_ports[i]]["Admin"] = val
+        elif "Link status" in label:
+            for i, val in enumerate(values):
+                if i < len(current_ports):
+                    port_data[current_ports[i]]["Link"] = val
         elif label == "Speed (Mbps)":
             for i, val in enumerate(values):
                 if i < len(current_ports):
