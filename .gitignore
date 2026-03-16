@@ -1,0 +1,17 @@
+# ── Secrets & credentials (added by Skippy Security 2026-03-15) ──
+.env
+.env.*
+*.env
+.env.local
+.env.development
+.env.production
+.env.staging
+.env.test
+credentials.json
+*_credentials.json
+secrets.json
+*_key.json
+*.pem
+*.key
+*.p12
+*.pfx
