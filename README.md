@@ -73,9 +73,23 @@ Port       Type         Alias                          Admin    Link     Speed  
 1/2/e1     gs           -                              Enabled  Up       80000  No Module  0%       0%
 
 --- Summary ---
-Total Ports:    48
-Admin Enabled:  32
-Link Up:        28
+Total Ports:          48
+  Admin Enabled:      32
+  Admin Disabled:     16
+
+Enabled Port Breakdown:
+  Network (OOB):      8
+  Tool (OOB):         4
+  Inline Network:     16  (8 pairs)
+  Inline Tool:        0
+  GS Engine:          1
+  --------------------
+  Total Enabled:      29
+
+Link Status (enabled ports):
+  Link Up:            28
+  Link Down:          2
+  No Link Info:       2
 ```
 
 **CSV:**
@@ -84,6 +98,18 @@ Port,Type,Alias,Admin Status,Link Status,Speed,Media,RxUtil%,TxUtil%
 1/1/x1,network,"",Disabled,-,-,Fiber,0.0000,0.0000
 1/1/x5,tool,"To_IDS_Sensor_1",Enabled,Up,10Gb,Fiber,0.0000,14.1394
 1/1/x7,tool,"To_NTP_Monitor",Enabled,Up,1Gb,Copper,0.0000,0.0000
+
+SUMMARY,,,,,,,
+Total Ports,48,,,,,,
+Admin Enabled,32,,,,,,
+Admin Disabled,16,,,,,,
+Enabled Network (OOB),8,,,,,,
+Enabled Tool (OOB),4,,,,,,
+Enabled Inline Network,16,,,,,,
+Enabled Inline Tool,0,,,,,,
+Enabled GS Engine,1,,,,,,
+Link Up,28,,,,,,
+Link Down,2,,,,,,
 ```
 
 **JSON:**

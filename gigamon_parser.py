@@ -207,16 +207,8 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
         # Add summary rows
         enabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "enabled")
         disabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "disabled")
-        link_up_count = sum(1 for p in port_data.values() if p.get("Link", "").lower() == "up")
-        link_down_count = sum(1 for p in port_data.values() if p.get("Link", "").lower() == "down")
         
-        print("")
-        print(f"SUMMARY,,,,,,,,")
-        print(f"Total Ports,{len(port_data)},,,,,,,")
-        print(f"Admin Enabled,{enabled_count},,,,,,,")
-        print(f"Admin Disabled,{disabled_count},,,,,,,")
-        print(f"Link Up,{link_up_count},,,,,,,")
-        print(f"Link Down,{link_down_count},,,,,,,")
+        # summary now printed below in unified section
             
     else:  # table format
         print(f"{'Port':<10} {'Type':<12} {'Alias':<30} {'Admin':<8} {'Link':<8} {'Speed':<6} {'Media':<10} {'RxUtil%':<8} {'TxUtil%':<8}")
@@ -238,15 +230,77 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             print(f"{port:<10} {p_type:<12} {alias:<30} {admin_status:<8} {link_status:<8} {data['Speed']:<6} {data['Media']:<10} {rx_str:<8} {tx_str:<8}")
 
     # --- Summary ---
-    if show_summary and output_format == 'table':
-        print("\n--- Summary ---")
+    if show_summary:
         enabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "enabled")
         disabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "disabled")
-        link_up_count = sum(1 for p in port_data.values() if p.get("Link", "").lower() == "up")
-        
-        print(f"Total Ports:    {len(port_data)}")
-        print(f"Admin Enabled:  {enabled_count}")
-        print(f"Link Up:        {link_up_count}")
+        link_up = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d.get("Link", "").lower() == "up")
+        link_down = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d.get("Link", "").lower() == "down")
+        link_na = enabled_count - link_up - link_down
+
+        # Count by type (enabled ports only)
+        en_net = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d["Type"].lower() == "network")
+        en_tool = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d["Type"].lower() == "tool")
+        en_inline_net = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d["Type"].lower() in ("inline-net", "inline-network"))
+        en_inline_tool = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d["Type"].lower() in ("inline-tool", "inline-tool"))
+        en_gs = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d["Type"].lower() in ("gs", "gigasmart", "gs-engine"))
+
+        # Count by type (all ports)
+        all_net = sum(1 for d in port_data.values() if d["Type"].lower() == "network")
+        all_tool = sum(1 for d in port_data.values() if d["Type"].lower() == "tool")
+        all_inline_net = sum(1 for d in port_data.values() if d["Type"].lower() in ("inline-net", "inline-network"))
+        all_inline_tool = sum(1 for d in port_data.values() if d["Type"].lower() in ("inline-tool",))
+        all_gs = sum(1 for d in port_data.values() if d["Type"].lower() in ("gs", "gigasmart", "gs-engine"))
+
+        if output_format == 'table':
+            print()
+            print("--- Summary ---")
+            print(f"Total Ports:          {len(port_data)}")
+            print(f"  Admin Enabled:      {enabled_count}")
+            print(f"  Admin Disabled:     {disabled_count}")
+            print()
+            print("Enabled Port Breakdown:")
+            print(f"  Network (OOB):      {en_net}")
+            print(f"  Tool (OOB):         {en_tool}")
+            if en_inline_net > 0:
+                pairs = en_inline_net // 2
+                print(f"  Inline Network:     {en_inline_net}  ({pairs} pair{'s' if pairs != 1 else ''})")
+            else:
+                print(f"  Inline Network:     0")
+            if en_inline_tool > 0:
+                tpairs = en_inline_tool // 2
+                print(f"  Inline Tool:        {en_inline_tool}  ({tpairs} pair{'s' if tpairs != 1 else ''})")
+            else:
+                print(f"  Inline Tool:        0")
+            print(f"  GS Engine:          {en_gs}")
+            print(f"  {'-' * 20}")
+            print(f"  Total Enabled:      {en_net + en_tool + en_inline_net + en_inline_tool + en_gs}")
+            print()
+            print("Link Status (enabled ports):")
+            print(f"  Link Up:            {link_up}")
+            print(f"  Link Down:          {link_down}")
+            if link_na > 0:
+                print(f"  No Link Info:       {link_na}")
+
+        elif output_format == 'csv':
+            print()
+            print("SUMMARY,,,,,,,,")
+            print(f"Total Ports,{len(port_data)},,,,,,,")
+            print(f"Admin Enabled,{enabled_count},,,,,,,")
+            print(f"Admin Disabled,{disabled_count},,,,,,,")
+            print(f"Enabled Network (OOB),{en_net},,,,,,,")
+            print(f"Enabled Tool (OOB),{en_tool},,,,,,,")
+            print(f"Enabled Inline Network,{en_inline_net},,,,,,,")
+            print(f"Enabled Inline Tool,{en_inline_tool},,,,,,,")
+            print(f"Enabled GS Engine,{en_gs},,,,,,,")
+            print(f"Link Up,{link_up},,,,,,,")
+            print(f"Link Down,{link_down},,,,,,,")
+
+        elif output_format == 'json':
+            # JSON summary is already printed as array; we add a summary object
+            pass  # JSON callers can compute from the array
+
+    if show_summary and output_format == 'json':
+        pass  # JSON output is the array; summary is derivable
     
     return port_data
 
@@ -260,7 +314,7 @@ def main():
     parser.add_argument('file', help='Path to the Gigamon show diag file')
     parser.add_argument('-f', '--format', choices=['table', 'csv', 'json'], default='table', help='Output format')
     parser.add_argument('--no-summary', action='store_true', help='Hide the summary counts')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 1.1.0')
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 1.2.0')
     
     args = parser.parse_args()
     
