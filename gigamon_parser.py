@@ -12,11 +12,19 @@ import json
 def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
     """
     Parses a Gigamon 'show diag' file to extract port inventory.
+    Supports standalone and multi-appliance cluster outputs.
     """
     
     # Dictionaries to store data
     port_aliases = {}
     port_data = {}
+    cluster_info = {
+        "is_cluster": False,
+        "cluster_id": "",
+        "cluster_name": "",
+        "node_count": 0,
+        "nodes": []
+    }
 
     try:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -24,6 +32,41 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
     except FileNotFoundError:
         print(f"Error: File '{file_path}' not found.", file=sys.stderr)
         sys.exit(1)
+
+    # --- STEP 0: Detect/parse cluster metadata ---
+    text = ''.join(lines)
+    node_count_m = re.search(r'Cluster node count:\s+(\d+)', text)
+    if node_count_m and int(node_count_m.group(1)) > 1:
+        cluster_info["is_cluster"] = True
+        cluster_info["node_count"] = int(node_count_m.group(1))
+        m = re.search(r'Cluster ID:\s+(\S+)', text)
+        if m:
+            cluster_info["cluster_id"] = m.group(1)
+        m = re.search(r'Cluster name:\s+(\S+)', text)
+        if m:
+            cluster_info["cluster_name"] = m.group(1)
+
+        chassis_m = re.search(r'-+Chassis-+\n.*?\n-+\n(.*?)(?=\n\n)', text, re.DOTALL)
+        if chassis_m:
+            row_pat = re.compile(r'^\s*(\d+)\s*\*?\s+(\S+)\s+yes\s+up\s+(\S+)\s+(\S+)\s+(\S+)', re.MULTILINE)
+            nodes = {}
+            for rm in row_pat.finditer(chassis_m.group(1)):
+                bid = rm.group(1)
+                nodes[bid] = {
+                    "box_id": int(bid),
+                    "hostname": rm.group(2),
+                    "hw_type": rm.group(3),
+                    "product_code": rm.group(4),
+                    "serial_number": rm.group(5),
+                    "total_ports": 0,
+                    "enabled_ports": 0,
+                    "network_ports": 0,
+                    "tool_ports": 0,
+                    "inline_network_ports": 0,
+                    "inline_tool_ports": 0,
+                    "gs_ports": 0,
+                }
+            cluster_info["nodes"] = [nodes[k] for k in sorted(nodes.keys(), key=int)]
 
     # --- STEP 1: Parse Running Config for Full Aliases ---
     in_running_config = False
@@ -42,7 +85,7 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
 
     # --- STEP 2: Parse Port Parameters Table ---
     current_ports = []
-    header_pattern = re.compile(r'^\s*Parameter\s+(1/\d+/\S+.*)')
+    header_pattern = re.compile(r'^\s*Parameter\s+([0-9]+/\d+/\S+.*)')
     
     for line in lines:
         line = line.strip()
@@ -169,6 +212,28 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
     def natural_keys(text):
         return [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', text)]
 
+    # Populate cluster per-node counts
+    if cluster_info["is_cluster"] and cluster_info["nodes"]:
+        node_map = {str(n["box_id"]): n for n in cluster_info["nodes"]}
+        for port, data in port_data.items():
+            box_id = port.split('/')[0] if '/' in port else None
+            if box_id in node_map:
+                node = node_map[box_id]
+                node["total_ports"] += 1
+                if data["Admin"].lower() == "enabled":
+                    node["enabled_ports"] += 1
+                ptype = data["Type"].lower()
+                if ptype == "network":
+                    node["network_ports"] += 1
+                elif ptype == "tool":
+                    node["tool_ports"] += 1
+                elif ptype in ("inline-net", "inline-network"):
+                    node["inline_network_ports"] += 1
+                elif ptype in ("inline-tool",):
+                    node["inline_tool_ports"] += 1
+                elif ptype in ("gs", "gigasmart", "gs-engine"):
+                    node["gs_ports"] += 1
+
     sorted_ports = sorted(port_data.keys(), key=natural_keys)
     
     if output_format == 'json':
@@ -188,7 +253,10 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
                 "rx_util_pct": round(rx_util, 4),
                 "tx_util_pct": round(tx_util, 4)
             })
-        print(json.dumps(output, indent=2))
+        if cluster_info["is_cluster"]:
+            print(json.dumps({"ports": output, "cluster": cluster_info}, indent=2))
+        else:
+            print(json.dumps(output, indent=2))
         
     elif output_format == 'csv':
         print("Port,Type,Alias,Admin Status,Link Status,Speed,Media,RxUtil%,TxUtil%")
@@ -254,6 +322,10 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
         if output_format == 'table':
             print()
             print("--- Summary ---")
+            if cluster_info["is_cluster"]:
+                print(f"Cluster:              {cluster_info['cluster_name'] or cluster_info['cluster_id']} ({cluster_info['node_count']} nodes)")
+                for node in cluster_info["nodes"]:
+                    print(f"  Box {node['box_id']}: {node['hostname']} ({node['hw_type']}) - {node['total_ports']} ports ({node['enabled_ports']} enabled)")
             print(f"Total Ports:          {len(port_data)}")
             print(f"  Admin Enabled:      {enabled_count}")
             print(f"  Admin Disabled:     {disabled_count}")
@@ -284,6 +356,11 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
         elif output_format == 'csv':
             print()
             print("SUMMARY,,,,,,,,")
+            if cluster_info["is_cluster"]:
+                print(f"Cluster,{cluster_info['cluster_name'] or cluster_info['cluster_id']},,,,,,,")
+                print(f"Cluster Nodes,{cluster_info['node_count']},,,,,,,")
+                for node in cluster_info["nodes"]:
+                    print(f"Box {node['box_id']} {node['hostname']} ({node['hw_type']}),{node['total_ports']},enabled={node['enabled_ports']},network={node['network_ports']},tool={node['tool_ports']},inline-net={node['inline_network_ports']},inline-tool={node['inline_tool_ports']},gs={node['gs_ports']}")
             print(f"Total Ports,{len(port_data)},,,,,,,")
             print(f"Admin Enabled,{enabled_count},,,,,,,")
             print(f"Admin Disabled,{disabled_count},,,,,,,")
