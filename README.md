@@ -67,23 +67,23 @@ gigamon-parser show_diag.txt --no-summary
 Port       Type         Alias                          Admin    Link     Speed  Media      RxUtil%  TxUtil%
 -------------------------------------------------------------------------------------------------------------------
 1/1/x1     network      -                              Disabled -        -      Fiber      0%       0%
-1/1/x5     tool         To_ExtraHop_1                  Enabled  Up       10Gb   Fiber      0%       14.14%
-1/1/x7     tool         To_Decryptor_1                 Enabled  Up       1Gb    Copper     0%       0%
-1/1/x17    inline-net   To_QFX_From_MX1_Link1          Enabled  Up       10Gb   Fiber      0.76%    0.59%
+1/1/x5     tool         To_IDS_Sensor_1                Enabled  Up       10Gb   Fiber      0%       14.14%
+1/1/x7     tool         To_NTP_Monitor                 Enabled  Up       1Gb    Copper     0%       0%
+1/1/x17    inline-net   To_Core_Switch_From_Router_1   Enabled  Up       10Gb   Fiber      0.76%    0.59%
 1/2/e1     gs           -                              Enabled  Up       80000  No Module  0%       0%
 
 --- Summary ---
-Total Ports:    59
-Admin Enabled:  21
-Link Up:        17
+Total Ports:    48
+Admin Enabled:  32
+Link Up:        28
 ```
 
 **CSV:**
 ```csv
 Port,Type,Alias,Admin Status,Link Status,Speed,Media,RxUtil%,TxUtil%
 1/1/x1,network,"",Disabled,-,-,Fiber,0.0000,0.0000
-1/1/x5,tool,"To_ExtraHop_1",Enabled,Up,10Gb,Fiber,0.0000,14.1394
-1/1/x7,tool,"To_Decryptor_1",Enabled,Up,1Gb,Copper,0.0000,0.0000
+1/1/x5,tool,"To_IDS_Sensor_1",Enabled,Up,10Gb,Fiber,0.0000,14.1394
+1/1/x7,tool,"To_NTP_Monitor",Enabled,Up,1Gb,Copper,0.0000,0.0000
 ```
 
 **JSON:**
@@ -103,7 +103,7 @@ Port,Type,Alias,Admin Status,Link Status,Speed,Media,RxUtil%,TxUtil%
   {
     "port": "1/1/x5",
     "type": "tool",
-    "alias": "To_ExtraHop_1",
+    "alias": "To_IDS_Sensor_1",
     "admin_status": "Enabled",
     "link_status": "Up",
     "speed": "10Gb",
