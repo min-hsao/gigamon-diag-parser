@@ -64,23 +64,26 @@ gigamon-parser show_diag.txt --no-summary
 
 **Table (default):**
 ```
-Port       Type         Alias                               Status     Speed    Media          
------------------------------------------------------------------------------------------------
-1/1/x1     network      Uplink_To_Core_Switch               Enabled    10Gb     Fiber          
-1/1/x2     network      Backup_Link                         Disabled   10Gb     No Module      
-1/1/x3     tool         IDS_Monitor_Port                    Enabled    1Gb      Copper         
+Port       Type         Alias                          Admin    Link     Speed  Media      RxUtil%  TxUtil%
+-------------------------------------------------------------------------------------------------------------------
+1/1/x1     network      -                              Disabled -        -      Fiber      0%       0%
+1/1/x5     tool         To_ExtraHop_1                  Enabled  Up       10Gb   Fiber      0%       14.14%
+1/1/x7     tool         To_Decryptor_1                 Enabled  Up       1Gb    Copper     0%       0%
+1/1/x17    inline-net   To_QFX_From_MX1_Link1          Enabled  Up       10Gb   Fiber      0.76%    0.59%
+1/2/e1     gs           -                              Enabled  Up       80000  No Module  0%       0%
 
 --- Summary ---
-Total Ports Found: 48
-Enabled: 32
-Disabled: 16
+Total Ports:    59
+Admin Enabled:  21
+Link Up:        17
 ```
 
 **CSV:**
 ```csv
-Port,Type,Alias,Status,Speed,Media
-1/1/x1,network,"Uplink_To_Core_Switch",Enabled,10Gb,Fiber
-1/1/x2,network,"Backup_Link",Disabled,10Gb,No Module
+Port,Type,Alias,Admin Status,Link Status,Speed,Media,RxUtil%,TxUtil%
+1/1/x1,network,"",Disabled,-,-,Fiber,0.0000,0.0000
+1/1/x5,tool,"To_ExtraHop_1",Enabled,Up,10Gb,Fiber,0.0000,14.1394
+1/1/x7,tool,"To_Decryptor_1",Enabled,Up,1Gb,Copper,0.0000,0.0000
 ```
 
 **JSON:**
@@ -89,10 +92,24 @@ Port,Type,Alias,Status,Speed,Media
   {
     "port": "1/1/x1",
     "type": "network",
-    "alias": "Uplink_To_Core_Switch",
-    "status": "Enabled",
+    "alias": "",
+    "admin_status": "Disabled",
+    "link_status": "-",
+    "speed": "-",
+    "media": "Fiber",
+    "rx_util_pct": 0.0,
+    "tx_util_pct": 0.0
+  },
+  {
+    "port": "1/1/x5",
+    "type": "tool",
+    "alias": "To_ExtraHop_1",
+    "admin_status": "Enabled",
+    "link_status": "Up",
     "speed": "10Gb",
-    "media": "Fiber"
+    "media": "Fiber",
+    "rx_util_pct": 0.0,
+    "tx_util_pct": 14.1394
   }
 ]
 ```
@@ -101,12 +118,24 @@ Port,Type,Alias,Status,Speed,Media
 
 | Field | Description |
 |-------|-------------|
-| Port | Port identifier (e.g., 1/1/x1) |
-| Type | Port type (network, tool, etc.) |
+| Port | Port identifier (e.g., 1/1/x1, 1/2/e1, 1/2/q1) |
+| Type | Port type — network, tool, inline-net, gs |
 | Alias | Port alias from running config |
-| Status | Admin status (Enabled/Disabled) |
-| Speed | Port speed (1Gb, 10Gb, 40Gb, 100Gb) |
+| Admin Status | Admin state — Enabled or Disabled |
+| Link Status | Link state — Up, Down, or - (N/A) |
+| Speed | Port speed (1Gb, 10Gb, 40Gb, 100Gb, 80000) |
 | Media | Media type (Fiber, Copper, No Module) |
+| Rx Util % | RX utilization percentage (from IfInOctetsPerSec) |
+| Tx Util % | TX utilization percentage (from IfOutOctetsPerSec) |
+
+## Port Types Detected
+
+| Type | Description |
+|------|-------------|
+| `network` | Out-of-band network port |
+| `tool` | Out-of-band tool port |
+| `inline-net` | Inline network port (bypass pair) |
+| `gs` | GigaSMART engine port |
 
 ## Requirements
 
