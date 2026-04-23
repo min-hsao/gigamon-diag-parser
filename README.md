@@ -64,7 +64,7 @@ Port       Type         Alias             Admin    Link    Speed  Media   RxUtil
 --------------------------------------------------------------------------------------------
 1/1/x1     network      -                 Disabled -       -      Fiber   0%       0%
 1/1/x5     tool         To_ExtraHop_1     Enabled  Up      10Gb   Fiber   0%       14.14%
-1/1/x17    inline-net   To_QFX_Core_1     Enabled  Up      10Gb   Fiber   0.76%    0.59%
+1/1/x6     inline-net   To_Core_1         Enabled  Up      10Gb   Fiber   0.76%    0.59%
 1/2/e1     gs           -                 Enabled  Up      80000  N/A     0%       0%
 
 --- Summary ---
