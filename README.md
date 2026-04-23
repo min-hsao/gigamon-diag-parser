@@ -1,29 +1,40 @@
 # Gigamon Show Diag Parser
 
-A CLI tool to parse Gigamon `show diag` output files and extract port inventory information.
+Standalone CLI tool to parse Gigamon `show diag` output and extract structured port inventory data. Zero dependencies.
+
+Used by the [Gigamon Migration Tool](https://github.com/min-hsao/gigamon-migration-tool) for HC2 migration analysis.
+
+## Features
+
+- **Full port inventory** — extracts all port types (network, tool, inline-net, gs, inline-tool)
+- **Running config parsing** — inline networks, GigaSMART features, port aliases
+- **Utilization data** — RX/TX utilization from interface counters
+- **Multiple output formats** — table, CSV, JSON
+- **Summary statistics** — enabled/disabled counts, link status, speed/media breakdown
+- **No dependencies** — pure Python 3.6+ standard library
 
 ## Installation
 
 ```bash
-# Clone the repo
 git clone https://github.com/min-hsao/gigamon-diag-parser.git
 cd gigamon-diag-parser
-
-# Make it executable (optional)
-chmod +x gigamon_parser.py
-
-# Or install globally (optional)
-ln -s $(pwd)/gigamon_parser.py /usr/local/bin/gigamon-parser
+chmod +x gigamon_parser.py  # optional
 ```
 
 ## Usage
 
 ```bash
-# Basic usage - just pass the diag file
-python gigamon_parser.py show_diag.txt
+# Default table output
+python3 gigamon_parser.py show_diag.txt
 
-# Or if made executable
-./gigamon_parser.py show_diag.txt
+# CSV for spreadsheet import
+python3 gigamon_parser.py show_diag.txt --format csv > ports.csv
+
+# JSON for scripting/piping
+python3 gigamon_parser.py show_diag.txt --format json
+
+# Suppress summary counts
+python3 gigamon_parser.py show_diag.txt --no-summary
 ```
 
 ### Options
@@ -37,82 +48,52 @@ positional arguments:
   file                  Path to the Gigamon show diag file
 
 options:
-  -h, --help            show this help message and exit
+  -h, --help            show this message and exit
   -f, --format {table,csv,json}
                         Output format (default: table)
   --no-summary          Hide the summary counts
-  -v, --version         show program's version number and exit
+  -v, --version         Show version number
 ```
 
-### Examples
+## Output Formats
 
-```bash
-# Default table output
-gigamon-parser show_diag.txt
+### Table (default)
 
-# CSV output (for Excel/spreadsheets)
-gigamon-parser show_diag.txt --format csv > ports.csv
-
-# JSON output (for scripting)
-gigamon-parser show_diag.txt --format json
-
-# Table without summary
-gigamon-parser show_diag.txt --no-summary
 ```
-
-### Output Formats
-
-**Table (default):**
-```
-Port       Type         Alias                          Admin    Link     Speed  Media      RxUtil%  TxUtil%
--------------------------------------------------------------------------------------------------------------------
-1/1/x1     network      -                              Disabled -        -      Fiber      0%       0%
-1/1/x5     tool         To_IDS_Sensor_1                Enabled  Up       10Gb   Fiber      0%       14.14%
-1/1/x7     tool         To_NTP_Monitor                 Enabled  Up       1Gb    Copper     0%       0%
-1/1/x17    inline-net   To_Core_Switch_From_Router_1   Enabled  Up       10Gb   Fiber      0.76%    0.59%
-1/2/e1     gs           -                              Enabled  Up       80000  No Module  0%       0%
+Port       Type         Alias             Admin    Link    Speed  Media   RxUtil%  TxUtil%
+--------------------------------------------------------------------------------------------
+1/1/x1     network      -                 Disabled -       -      Fiber   0%       0%
+1/1/x5     tool         To_ExtraHop_1     Enabled  Up      10Gb   Fiber   0%       14.14%
+1/1/x17    inline-net   To_QFX_Core_1     Enabled  Up      10Gb   Fiber   0.76%    0.59%
+1/2/e1     gs           -                 Enabled  Up      80000  N/A     0%       0%
 
 --- Summary ---
-Total Ports:          48
-  Admin Enabled:      32
-  Admin Disabled:     16
+Total Ports:          59
+  Admin Enabled:      21
+  Admin Disabled:     38
 
 Enabled Port Breakdown:
-  Network (OOB):      8
+  Network (OOB):      0
   Tool (OOB):         4
   Inline Network:     16  (8 pairs)
-  Inline Tool:        0
   GS Engine:          1
-  --------------------
-  Total Enabled:      29
+  Total Enabled:      21
 
-Link Status (enabled ports):
-  Link Up:            28
-  Link Down:          2
-  No Link Info:       2
+Speed/Media (enabled):
+  10G Fiber (SR):     18
+  1G Copper:          2
 ```
 
-**CSV:**
+### CSV
+
 ```csv
 Port,Type,Alias,Admin Status,Link Status,Speed,Media,RxUtil%,TxUtil%
-1/1/x1,network,"",Disabled,-,-,Fiber,0.0000,0.0000
-1/1/x5,tool,"To_IDS_Sensor_1",Enabled,Up,10Gb,Fiber,0.0000,14.1394
-1/1/x7,tool,"To_NTP_Monitor",Enabled,Up,1Gb,Copper,0.0000,0.0000
-
-SUMMARY,,,,,,,
-Total Ports,48,,,,,,
-Admin Enabled,32,,,,,,
-Admin Disabled,16,,,,,,
-Enabled Network (OOB),8,,,,,,
-Enabled Tool (OOB),4,,,,,,
-Enabled Inline Network,16,,,,,,
-Enabled Inline Tool,0,,,,,,
-Enabled GS Engine,1,,,,,,
-Link Up,28,,,,,,
-Link Down,2,,,,,,
+1/1/x1,network,,Disabled,-,-,Fiber,0.0000,0.0000
+1/1/x5,tool,To_ExtraHop_1,Enabled,Up,10Gb,Fiber,0.0000,14.1394
 ```
 
-**JSON:**
+### JSON
+
 ```json
 [
   {
@@ -125,48 +106,35 @@ Link Down,2,,,,,,
     "media": "Fiber",
     "rx_util_pct": 0.0,
     "tx_util_pct": 0.0
-  },
-  {
-    "port": "1/1/x5",
-    "type": "tool",
-    "alias": "To_IDS_Sensor_1",
-    "admin_status": "Enabled",
-    "link_status": "Up",
-    "speed": "10Gb",
-    "media": "Fiber",
-    "rx_util_pct": 0.0,
-    "tx_util_pct": 14.1394
   }
 ]
 ```
 
-## Information Extracted
+## Data Extracted
 
-| Field | Description |
-|-------|-------------|
-| Port | Port identifier (e.g., 1/1/x1, 1/2/e1, 1/2/q1) |
-| Type | Port type — network, tool, inline-net, gs |
-| Alias | Port alias from running config |
-| Admin Status | Admin state — Enabled or Disabled |
-| Link Status | Link state — Up, Down, or - (N/A) |
-| Speed | Port speed (1Gb, 10Gb, 40Gb, 100Gb, 80000) |
-| Media | Media type (Fiber, Copper, No Module) |
-| Rx Util % | RX utilization percentage (from IfInOctetsPerSec) |
-| Tx Util % | TX utilization percentage (from IfOutOctetsPerSec) |
+| Field | Source Section | Description |
+|-------|---------------|-------------|
+| Port | Port Params | Port identifier (1/1/x1, 1/2/e1, 1/2/q1) |
+| Type | Port Params | network, tool, inline-net, gs |
+| Alias | Port Params + Running Config | Full alias from running config (not truncated) |
+| Admin Status | Port Params | Enabled / Disabled |
+| Link Status | Port Params | Up / Down / - (N/A) |
+| Speed | Port Params | 1Gb, 10Gb, 40Gb, 100Gb |
+| Media | SFP Type | Fiber, Copper, N/A |
+| RX/TX Util % | IfInOctetsPerSec / IfOutOctetsPerSec | Current utilization percentage |
 
-## Port Types Detected
+## Supported HW Types
 
-| Type | Description |
-|------|-------------|
-| `network` | Out-of-band network port |
-| `tool` | Out-of-band tool port |
-| `inline-net` | Inline network port (bypass pair) |
-| `gs` | GigaSMART engine port |
+Tested with `show diag` output from:
+
+- **CHS-HC2** — GigaVUE-HC2 (EOL, migration source)
+- **CHS-HC1** — GigaVUE-HC1
+- GigaVUE-OS 6.x
 
 ## Requirements
 
 - Python 3.6+
-- No external dependencies (uses only standard library)
+- No external dependencies
 
 ## License
 
