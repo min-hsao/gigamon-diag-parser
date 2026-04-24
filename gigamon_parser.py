@@ -291,10 +291,17 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
         
         # summary now printed below in unified section
             
-    else:  # table format
-        print(f"{'Port':<10} {'Type':<12} {'Alias':<42} {'Admin':<8} {'Link':<8} {'Speed':<7} {'Media':<14} {'RxUtil%':<8} {'TxUtil%':<8}")
-        print("-" * 140)
+    else:  # table / CLI format
+        def fmt(text, width):
+            text = str(text) if text not in (None, "") else "-"
+            return text if len(text) <= width else text[:max(1, width-3)] + "..."
 
+        header = f"{'Port':<10} {'Type':<10} {'Alias':<36} {'Admin':<8} {'Link':<6} {'Speed':<7} {'Media':<12} {'Rx':>7} {'Tx':>7}"
+        rule = "-" * len(header)
+        print(header)
+        print(rule)
+
+        current_box = None
         for port in sorted_ports:
             data = port_data[port]
             alias = port_aliases.get(port, "-")
@@ -308,9 +315,21 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             rx_str = f"{rx_util:.2f}%" if rx_util > 0 else "0%"
             tx_str = f"{tx_util:.2f}%" if tx_util > 0 else "0%"
 
-            alias_disp = alias if len(alias) <= 42 else alias[:39] + "..."
-            media_disp = data['Media'] if len(data['Media']) <= 14 else data['Media'][:11] + "..."
-            print(f"{port:<10} {p_type:<12} {alias_disp:<42} {admin_status:<8} {link_status:<8} {data['Speed']:<7} {media_disp:<14} {rx_str:<8} {tx_str:<8}")
+            # Group cluster output by box for cleaner CLI readability
+            box_id = port.split('/')[0] if '/' in port else None
+            if cluster_info["is_cluster"] and box_id != current_box:
+                current_box = box_id
+                node = next((n for n in cluster_info["nodes"] if str(n["box_id"]) == box_id), None)
+                if node:
+                    print()
+                    print(f"[Box {node['box_id']}] {node['hostname']} ({node['hw_type']})")
+                    print(rule)
+
+            print(
+                f"{port:<10} {fmt(p_type,10):<10} {fmt(alias,36):<36} "
+                f"{fmt(admin_status,8):<8} {fmt(link_status,6):<6} {fmt(data['Speed'],7):<7} "
+                f"{fmt(data['Media'],12):<12} {rx_str:>7} {tx_str:>7}"
+            )
 
     # --- Summary ---
     if show_summary:
