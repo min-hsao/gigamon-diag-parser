@@ -262,17 +262,43 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
                 "admin_status": data["Admin"].capitalize(),
                 "link_status": data.get("Link", "N/A").capitalize(),
                 "speed": data["Speed"],
+                "sfp_type": data["SFP"],
                 "media": data["Media"],
                 "rx_util_pct": round(rx_util, 4),
                 "tx_util_pct": round(tx_util, 4)
             })
+        json_payload = {"ports": output}
         if cluster_info["is_cluster"]:
-            print(json.dumps({"ports": output, "cluster": cluster_info}, indent=2))
-        else:
-            print(json.dumps(output, indent=2))
+            json_payload["cluster"] = cluster_info
+        if show_summary:
+            enabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "enabled")
+            disabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "disabled")
+            link_up = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d.get("Link", "").lower() == "up")
+            link_down = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d.get("Link", "").lower() == "down")
+            sfp_breakdown = {}
+            for d in port_data.values():
+                sfp = d.get("SFP", "N/A") or "N/A"
+                if sfp not in sfp_breakdown:
+                    sfp_breakdown[sfp] = {"total": 0, "enabled": 0, "enabled_up": 0, "enabled_down": 0}
+                sfp_breakdown[sfp]["total"] += 1
+                if d["Admin"].lower() == "enabled":
+                    sfp_breakdown[sfp]["enabled"] += 1
+                    if d.get("Link", "").lower() == "up":
+                        sfp_breakdown[sfp]["enabled_up"] += 1
+                    elif d.get("Link", "").lower() == "down":
+                        sfp_breakdown[sfp]["enabled_down"] += 1
+            json_payload["summary"] = {
+                "total_ports": len(port_data),
+                "admin_enabled": enabled_count,
+                "admin_disabled": disabled_count,
+                "link_up": link_up,
+                "link_down": link_down,
+                "sfp_type_breakdown": sfp_breakdown,
+            }
+        print(json.dumps(json_payload, indent=2))
         
     elif output_format == 'csv':
-        print("Port,Type,Alias,Admin Status,Link Status,Speed,Media,RxUtil%,TxUtil%")
+        print("Port,Type,Alias,Admin Status,Link Status,Speed,SFP Type,RxUtil%,TxUtil%")
         for port in sorted_ports:
             data = port_data[port]
             alias = port_aliases.get(port, "").replace(",", ";")
@@ -283,7 +309,7 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             rx_util = calc_util(data["RxRate"], data["Speed"])
             tx_util = calc_util(data["TxRate"], data["Speed"])
             
-            print(f'{port},{p_type},"{alias}",{admin_status},{link_status},{data["Speed"]},{data["Media"]},{rx_util:.4f},{tx_util:.4f}')
+            print(f'{port},{p_type},"{alias}",{admin_status},{link_status},{data["Speed"]},{data["SFP"]},{rx_util:.4f},{tx_util:.4f}')
         
         # Add summary rows
         enabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "enabled")
@@ -296,7 +322,7 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             text = str(text) if text not in (None, "") else "-"
             return text if len(text) <= width else text[:max(1, width-3)] + "..."
 
-        header = f"{'Port':<10} {'Type':<10} {'Alias':<36} {'Admin':<8} {'Link':<6} {'Speed':<7} {'Media':<12} {'Rx':>7} {'Tx':>7}"
+        header = f"{'Port':<10} {'Type':<10} {'Alias':<34} {'Admin':<8} {'Link':<6} {'Speed':<7} {'SFP Type':<16} {'Rx':>7} {'Tx':>7}"
         rule = "-" * len(header)
         print(header)
         print(rule)
@@ -328,7 +354,7 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             print(
                 f"{port:<10} {fmt(p_type,10):<10} {fmt(alias,36):<36} "
                 f"{fmt(admin_status,8):<8} {fmt(link_status,6):<6} {fmt(data['Speed'],7):<7} "
-                f"{fmt(data['Media'],12):<12} {rx_str:>7} {tx_str:>7}"
+                f"{fmt(data['SFP'],16):<16} {rx_str:>7} {tx_str:>7}"
             )
 
     # --- Summary ---
@@ -352,6 +378,20 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
         all_inline_net = sum(1 for d in port_data.values() if d["Type"].lower() in ("inline-net", "inline-network"))
         all_inline_tool = sum(1 for d in port_data.values() if d["Type"].lower() in ("inline-tool",))
         all_gs = sum(1 for d in port_data.values() if d["Type"].lower() in ("gs", "gigasmart", "gs-engine"))
+
+        # SFP type breakdown
+        sfp_breakdown = {}
+        for d in port_data.values():
+            sfp = d.get("SFP", "N/A") or "N/A"
+            if sfp not in sfp_breakdown:
+                sfp_breakdown[sfp] = {"total": 0, "enabled": 0, "enabled_up": 0, "enabled_down": 0}
+            sfp_breakdown[sfp]["total"] += 1
+            if d["Admin"].lower() == "enabled":
+                sfp_breakdown[sfp]["enabled"] += 1
+                if d.get("Link", "").lower() == "up":
+                    sfp_breakdown[sfp]["enabled_up"] += 1
+                elif d.get("Link", "").lower() == "down":
+                    sfp_breakdown[sfp]["enabled_down"] += 1
 
         if output_format == 'table':
             print()
@@ -387,6 +427,15 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             if link_na > 0:
                 print(f"  No Link Info:       {link_na}")
 
+            print()
+            print("SFP Type Breakdown:")
+            print(f"{'SFP Type':<20} {'Total':>7} {'Enabled':>9} {'Enabled Up':>11} {'Enabled Down':>13}")
+            print("-" * 64)
+            for sfp in sorted(sfp_breakdown.keys(), key=lambda x: x.lower()):
+                row = sfp_breakdown[sfp]
+                sfp_disp = sfp if len(sfp) <= 20 else sfp[:17] + '...'
+                print(f"{sfp_disp:<20} {row['total']:>7} {row['enabled']:>9} {row['enabled_up']:>11} {row['enabled_down']:>13}")
+
         elif output_format == 'csv':
             print()
             print("SUMMARY,,,,,,,,")
@@ -405,6 +454,10 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             print(f"Enabled GS Engine,{en_gs},,,,,,,")
             print(f"Link Up,{link_up},,,,,,,")
             print(f"Link Down,{link_down},,,,,,,")
+            print("SFP Type,Total,Enabled,Enabled Up,Enabled Down,,,,")
+            for sfp in sorted(sfp_breakdown.keys(), key=lambda x: x.lower()):
+                row = sfp_breakdown[sfp]
+                print(f"{sfp},{row['total']},{row['enabled']},{row['enabled_up']},{row['enabled_down']},,,,")
 
         elif output_format == 'json':
             # JSON summary is already printed as array; we add a summary object
