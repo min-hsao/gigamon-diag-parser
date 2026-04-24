@@ -87,8 +87,10 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
     current_ports = []
     header_pattern = re.compile(r'^\s*Parameter\s+([0-9]+/\d+/\S+.*)')
     
-    for line in lines:
-        line = line.strip()
+    valid_param_labels = {"Type", "Admin", "Link status", "Speed (Mbps)", "SFP type"}
+
+    for raw_line in lines:
+        line = raw_line.strip()
         
         match = header_pattern.match(line)
         if match:
@@ -106,16 +108,27 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
                     }
             continue
 
+        # End the current Parameter table when another section starts
+        if line.startswith("-----------------------------------") or line.startswith("#=================================="):
+            current_ports = []
+            continue
+
         if line.startswith("=") or not current_ports:
             continue
 
         parts = re.split(r'\s{2,}', line)
-        if len(parts) < 2: continue
+        if len(parts) < 2:
+            continue
             
-        label = parts[0].replace(":", "").strip()
+        raw_label = parts[0].strip()
+        label = raw_label.replace(":", "").strip()
         values = parts[1:]
+
+        # Only parse actual Port Params rows; ignore trailing stats/other text
+        if raw_label.rstrip(':') not in valid_param_labels and label not in valid_param_labels:
+            continue
         
-        if label == "Type":
+        if label == "Type": 
             for i, val in enumerate(values):
                 if i < len(current_ports):
                     port_data[current_ports[i]]["Type"] = val
@@ -279,8 +292,8 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
         # summary now printed below in unified section
             
     else:  # table format
-        print(f"{'Port':<10} {'Type':<12} {'Alias':<30} {'Admin':<8} {'Link':<8} {'Speed':<6} {'Media':<10} {'RxUtil%':<8} {'TxUtil%':<8}")
-        print("-" * 115)
+        print(f"{'Port':<10} {'Type':<12} {'Alias':<42} {'Admin':<8} {'Link':<8} {'Speed':<7} {'Media':<14} {'RxUtil%':<8} {'TxUtil%':<8}")
+        print("-" * 140)
 
         for port in sorted_ports:
             data = port_data[port]
@@ -295,7 +308,9 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             rx_str = f"{rx_util:.2f}%" if rx_util > 0 else "0%"
             tx_str = f"{tx_util:.2f}%" if tx_util > 0 else "0%"
 
-            print(f"{port:<10} {p_type:<12} {alias:<30} {admin_status:<8} {link_status:<8} {data['Speed']:<6} {data['Media']:<10} {rx_str:<8} {tx_str:<8}")
+            alias_disp = alias if len(alias) <= 42 else alias[:39] + "..."
+            media_disp = data['Media'] if len(data['Media']) <= 14 else data['Media'][:11] + "..."
+            print(f"{port:<10} {p_type:<12} {alias_disp:<42} {admin_status:<8} {link_status:<8} {data['Speed']:<7} {media_disp:<14} {rx_str:<8} {tx_str:<8}")
 
     # --- Summary ---
     if show_summary:
