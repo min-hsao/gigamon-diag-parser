@@ -65,6 +65,8 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
                     "inline_network_ports": 0,
                     "inline_tool_ports": 0,
                     "gs_ports": 0,
+                    "hybrid_ports": 0,
+                    "stack_ports": 0,
                 }
             cluster_info["nodes"] = [nodes[k] for k in sorted(nodes.keys(), key=int)]
 
@@ -246,6 +248,10 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
                     node["inline_tool_ports"] += 1
                 elif ptype in ("gs", "gigasmart", "gs-engine"):
                     node["gs_ports"] += 1
+                elif ptype == "hybrid":
+                    node["hybrid_ports"] += 1
+                elif ptype == "stack":
+                    node["stack_ports"] += 1
 
     sorted_ports = sorted(port_data.keys(), key=natural_keys)
     
@@ -294,6 +300,8 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
                 "link_up": link_up,
                 "link_down": link_down,
                 "sfp_type_breakdown": sfp_breakdown,
+                "enabled_hybrid": sum(1 for d in port_data.values() if d["Admin"].lower() == "enabled" and d["Type"].lower() == "hybrid"),
+                "enabled_stack": sum(1 for d in port_data.values() if d["Admin"].lower() == "enabled" and d["Type"].lower() == "stack"),
             }
         print(json.dumps(json_payload, indent=2))
         
@@ -371,6 +379,8 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
         en_inline_net = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d["Type"].lower() in ("inline-net", "inline-network"))
         en_inline_tool = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d["Type"].lower() in ("inline-tool", "inline-tool"))
         en_gs = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d["Type"].lower() in ("gs", "gigasmart", "gs-engine"))
+        en_hybrid = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d["Type"].lower() == "hybrid")
+        en_stack = sum(1 for p, d in port_data.items() if d["Admin"].lower() == "enabled" and d["Type"].lower() == "stack")
 
         # Count by type (all ports)
         all_net = sum(1 for d in port_data.values() if d["Type"].lower() == "network")
@@ -378,6 +388,8 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
         all_inline_net = sum(1 for d in port_data.values() if d["Type"].lower() in ("inline-net", "inline-network"))
         all_inline_tool = sum(1 for d in port_data.values() if d["Type"].lower() in ("inline-tool",))
         all_gs = sum(1 for d in port_data.values() if d["Type"].lower() in ("gs", "gigasmart", "gs-engine"))
+        all_hybrid = sum(1 for d in port_data.values() if d["Type"].lower() == "hybrid")
+        all_stack = sum(1 for d in port_data.values() if d["Type"].lower() == "stack")
 
         # SFP type breakdown
         sfp_breakdown = {}
@@ -418,8 +430,12 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             else:
                 print(f"  Inline Tool:        0")
             print(f"  GS Engine:          {en_gs}")
+            if en_hybrid > 0:
+                print(f"  Hybrid:             {en_hybrid}")
+            if en_stack > 0:
+                print(f"  Stack:              {en_stack}")
             print(f"  {'-' * 20}")
-            print(f"  Total Enabled:      {en_net + en_tool + en_inline_net + en_inline_tool + en_gs}")
+            print(f"  Total Enabled:      {en_net + en_tool + en_inline_net + en_inline_tool + en_gs + en_hybrid + en_stack}")
             print()
             print("Link Status (enabled ports):")
             print(f"  Link Up:            {link_up}")
@@ -443,7 +459,7 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
                 print(f"Cluster,{cluster_info['cluster_name'] or cluster_info['cluster_id']},,,,,,,")
                 print(f"Cluster Nodes,{cluster_info['node_count']},,,,,,,")
                 for node in cluster_info["nodes"]:
-                    print(f"Box {node['box_id']} {node['hostname']} ({node['hw_type']}),{node['total_ports']},enabled={node['enabled_ports']},network={node['network_ports']},tool={node['tool_ports']},inline-net={node['inline_network_ports']},inline-tool={node['inline_tool_ports']},gs={node['gs_ports']}")
+                    print(f"Box {node['box_id']} {node['hostname']} ({node['hw_type']}),{node['total_ports']},enabled={node['enabled_ports']},network={node['network_ports']},tool={node['tool_ports']},inline-net={node['inline_network_ports']},inline-tool={node['inline_tool_ports']},gs={node['gs_ports']},hybrid={node['hybrid_ports']},stack={node['stack_ports']}")
             print(f"Total Ports,{len(port_data)},,,,,,,")
             print(f"Admin Enabled,{enabled_count},,,,,,,")
             print(f"Admin Disabled,{disabled_count},,,,,,,")
@@ -452,6 +468,8 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             print(f"Enabled Inline Network,{en_inline_net},,,,,,,")
             print(f"Enabled Inline Tool,{en_inline_tool},,,,,,,")
             print(f"Enabled GS Engine,{en_gs},,,,,,,")
+            print(f"Enabled Hybrid,{en_hybrid},,,,,,,")
+            print(f"Enabled Stack,{en_stack},,,,,,,")
             print(f"Link Up,{link_up},,,,,,,")
             print(f"Link Down,{link_down},,,,,,,")
             print("SFP Type,Total,Enabled,Enabled Up,Enabled Down,,,,")
