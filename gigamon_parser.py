@@ -374,6 +374,17 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
         except (ValueError, AttributeError):
             return ''
 
+    # Classify interface types
+    def classify_interface(name):
+        n = name.lower()
+        if 'netflow' in n: return 'netflow'
+        if 'tunnel' in n: return 'tunnel'
+        if 'metadata' in n: return 'metadata'
+        if n.startswith('eth'): return 'management'
+        if n.startswith('inband'): return 'inband'
+        if 'ndisc' in n or 'pdisc' in n: return 'discovery'
+        return 'other'
+
     for iface in ip_interfaces:
         ip = iface.get('ip_address', '')
         nm = iface.get('netmask', '')
@@ -382,6 +393,7 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             iface['ip_mask'] = f"{ip}/{cidr}" if cidr else f"{ip} {nm}"
         elif ip:
             iface['ip_mask'] = ip
+        iface['interface_type'] = classify_interface(iface['name'])
 
     for iface in logical_ip_interfaces:
         ip = iface.get('ipv4', '')
@@ -391,6 +403,7 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
             iface['ip_mask'] = f"{ip}/{cidr}" if cidr else f"{ip} {nm}"
         elif ip:
             iface['ip_mask'] = ip
+        iface['interface_type'] = classify_interface(iface['name'])
 
     # --- STEP 2.8: Parse GigaSMART / Box Licenses ---
     gs_licenses = []
@@ -483,10 +496,10 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
         if cluster_info["is_cluster"]:
             json_payload["cluster"] = cluster_info
         # IP Interfaces
-        if ip_interfaces:
+        if ip_interfaces or logical_ip_interfaces:
             json_payload["ip_interfaces"] = ip_interfaces
-        if logical_ip_interfaces:
             json_payload["logical_ip_interfaces"] = logical_ip_interfaces
+            json_payload["all_ip_interfaces"] = ip_interfaces + logical_ip_interfaces
         # GigaSMART Licenses
         if gs_licenses:
             json_payload["gs_licenses"] = gs_licenses
@@ -667,30 +680,29 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
                 print(f"{sfp_disp:<20} {row['total']:>7} {row['enabled']:>9} {row['enabled_up']:>11} {row['enabled_down']:>13}")
 
             # IP Interfaces
-            if ip_interfaces:
+            all_ifaces = ip_interfaces + logical_ip_interfaces
+            if all_ifaces:
                 print()
-                print("--- IP Interfaces (Physical) ---")
-                for iface in ip_interfaces:
+                print("--- IP Interfaces ---")
+                print(f"  {'Name':<35} {'IP/Mask':<20} {'Type':<12} {'Admin':<6} {'Oper':<6} {'Ports':<12}")
+                print(f"  {'-'*35} {'-'*20} {'-'*12} {'-'*6} {'-'*6} {'-'*12}")
+                for iface in all_ifaces:
                     ip_str = iface.get('ip_mask', iface.get('ip_address', 'N/A'))
-                    admin = iface.get('admin_status', 'N/A')
-                    oper = iface.get('oper_status', 'N/A')
-                    speed = iface.get('speed', 'N/A')
-                    print(f"  {iface['name']:<20} {ip_str:<20} admin={admin:<5} oper={oper:<5} speed={speed}")
+                    itype = iface.get('interface_type', '')
+                    admin = iface.get('admin_status', '')
+                    oper = iface.get('oper_status', '')
+                    ports = iface.get('ports', '')
+                    name = iface['name']
+                    if len(name) > 35: name = name[:32] + '...'
+                    print(f"  {name:<35} {ip_str:<20} {itype:<12} {admin:<6} {oper:<6} {ports:<12}")
                     if iface.get('secondary_address'):
                         print(f"    alias: {iface['secondary_address']}")
-
-            if logical_ip_interfaces:
-                print()
-                print("--- IP Interfaces (Logical) ---")
-                for iface in logical_ip_interfaces:
-                    ip_str = iface.get('ip_mask', iface.get('ipv4', 'N/A'))
-                    ports = iface.get('ports', 'N/A')
                     gs = iface.get('gsgroup', '')
+                    exp = iface.get('exporter', '')
+                    if gs or exp:
+                        print(f"    gsgroup={gs}  exporter={exp}")
                     comment = iface.get('comment', '')
-                    print(f"  {iface['name']:<35} {ip_str:<20} ports={ports}")
-                    if gs:
-                        print(f"    gsgroup={gs}  exporter={iface.get('exporter', '')}")
-                    if comment and comment != '-':
+                    if comment and comment not in ('-', ''):
                         print(f"    {comment}")
 
             # GigaSMART Licenses
