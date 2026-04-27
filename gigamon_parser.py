@@ -253,6 +253,212 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
                 elif ptype == "stack":
                     node["stack_ports"] += 1
 
+    # --- STEP 2.6: Parse Physical IP Interfaces (eth0, eth1, etc.) ---
+    ip_interfaces = []
+    phys_iface_pat = re.compile(r'^Interface\s+(\S+)\s+status:')
+    in_phys_iface = False
+    current_iface = {}
+
+    for line in lines:
+        m = phys_iface_pat.match(line.strip())
+        if m:
+            if current_iface.get('name'):
+                ip_interfaces.append(current_iface)
+            current_iface = {'name': m.group(1)}
+            in_phys_iface = True
+            continue
+
+        if in_phys_iface:
+            stripped = line.strip()
+            if stripped.startswith('---') or stripped.startswith('===') or stripped.startswith('RX bytes'):
+                # Before closing, check if this is end of interface block
+                if stripped.startswith('RX bytes'):
+                    continue  # still in the iface, just stats
+                continue
+            if not stripped:
+                if current_iface.get('name'):
+                    ip_interfaces.append(current_iface)
+                    current_iface = {}
+                    in_phys_iface = False
+                continue
+            kv = re.split(r':\s*', stripped, 1)
+            if len(kv) == 2:
+                key, val = kv[0].strip(), kv[1].strip()
+                if key == 'Admin up':
+                    current_iface['admin_status'] = 'up' if val.lower() == 'yes' else 'down'
+                elif key == 'Link up':
+                    current_iface['oper_status'] = 'up' if val.lower() == 'yes' else 'down'
+                elif key == 'IP address' and val:
+                    current_iface['ip_address'] = val
+                elif key == 'Netmask' and val:
+                    current_iface['netmask'] = val
+                elif key == 'Speed' and val:
+                    current_iface['speed'] = val
+                elif key == 'Interface type' and val:
+                    current_iface['type'] = val
+                elif key == 'Secondary address' and val:
+                    current_iface['secondary_address'] = val
+    if current_iface.get('name'):
+        ip_interfaces.append(current_iface)
+
+    # --- STEP 2.7: Parse Logical IP Interfaces (from IP Interfaces section) ---
+    logical_ip_interfaces = []
+    in_ip_section = False
+    in_ip_iface = False
+    current_log_iface = {}
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped.startswith('++IP Interfaces++') or stripped.startswith('++++++++++++++++++++++++++++++++++IP Interfaces'):
+            in_ip_section = True
+            continue
+
+        if in_ip_section and stripped.startswith('++') and 'IP Interface' not in stripped:
+            # Next section started
+            if current_log_iface.get('name'):
+                logical_ip_interfaces.append(current_log_iface)
+                current_log_iface = {}
+            in_ip_section = False
+            in_ip_iface = False
+            continue
+
+        if in_ip_section:
+            iface_m = re.match(r'^Interface\s+(\S+)\s*:', stripped)
+            if iface_m:
+                if current_log_iface.get('name'):
+                    logical_ip_interfaces.append(current_log_iface)
+                current_log_iface = {'name': iface_m.group(1)}
+                in_ip_iface = True
+                continue
+
+            if stripped.startswith('---'):
+                if current_log_iface.get('name'):
+                    logical_ip_interfaces.append(current_log_iface)
+                    current_log_iface = {}
+                    in_ip_iface = False
+                continue
+
+            if in_ip_iface:
+                kv = re.split(r':\s*', stripped, 1)
+                if len(kv) == 2:
+                    key, val = kv[0].strip(), kv[1].strip()
+                    if key == 'Comment':
+                        current_log_iface['comment'] = val
+                    elif key == 'IPv4 address' and val and val != 'N/A':
+                        current_log_iface['ipv4'] = val
+                    elif key == 'Netmask' and val and val != 'N/A':
+                        current_log_iface['netmask'] = val
+                    elif key == 'Gateway' and val and val != 'N/A':
+                        current_log_iface['gateway'] = val
+                    elif key == 'Ports':
+                        current_log_iface['ports'] = val
+                    elif key == 'IPv6 address' and val and val != 'N/A':
+                        current_log_iface['ipv6'] = val
+                    elif key == 'MTU':
+                        current_log_iface['mtu'] = val
+                    elif key == 'HW address':
+                        current_log_iface['mac'] = val
+                    elif key == 'Gsgroup':
+                        current_log_iface['gsgroup'] = val
+                    elif key == 'Exporter':
+                        current_log_iface['exporter'] = val
+
+    if current_log_iface.get('name'):
+        logical_ip_interfaces.append(current_log_iface)
+
+    # Compute CIDR for physical interfaces
+    def netmask_to_cidr(nm):
+        try:
+            return sum(bin(int(x)).count('1') for x in nm.split('.'))
+        except (ValueError, AttributeError):
+            return ''
+
+    for iface in ip_interfaces:
+        ip = iface.get('ip_address', '')
+        nm = iface.get('netmask', '')
+        if ip and nm:
+            cidr = netmask_to_cidr(nm)
+            iface['ip_mask'] = f"{ip}/{cidr}" if cidr else f"{ip} {nm}"
+        elif ip:
+            iface['ip_mask'] = ip
+
+    for iface in logical_ip_interfaces:
+        ip = iface.get('ipv4', '')
+        nm = iface.get('netmask', '')
+        if ip and nm:
+            cidr = netmask_to_cidr(nm)
+            iface['ip_mask'] = f"{ip}/{cidr}" if cidr else f"{ip} {nm}"
+        elif ip:
+            iface['ip_mask'] = ip
+
+    # --- STEP 2.8: Parse GigaSMART / Box Licenses ---
+    gs_licenses = []
+    in_license_section = False
+    current_box = None
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped.startswith('++++Licenses') or stripped.startswith('++++++++++++++++++++++++++++++++++++Licenses'):
+            in_license_section = True
+            continue
+
+        if in_license_section and stripped.startswith('++'):
+            in_license_section = False
+            continue
+
+        if not in_license_section:
+            continue
+
+        box_m = re.match(r'^-{3,}$', stripped)
+        box_label = re.match(r'^Box\s+(\d+)$', stripped, re.IGNORECASE)
+
+        if box_label:
+            current_box = int(box_label.group(1))
+            continue
+
+        # Skip header lines
+        if 'Slot' in stripped and 'Feature' in stripped:
+            continue
+        if 'Chassis-Feature' in stripped:
+            continue
+        if stripped.startswith('--'):
+            continue
+
+        if not stripped or stripped.startswith('Total'):
+            continue
+
+        # Parse license row
+        # Format 1 (HC2): "2     dedup             -           2025/01/30  Never"
+        # Format 2 (TA):   "ADV_FEATURES     -                       Never"
+        parts = re.split(r'\s{2,}', stripped)
+        if len(parts) >= 2:
+            slot_or_feature = parts[0].strip()
+            # Check if first column is a slot number (digits only)
+            is_slot_row = re.match(r'^\d+$', slot_or_feature)
+
+            if is_slot_row and len(parts) >= 4:
+                # HC-style: slot, feature, params, start, expiry
+                gs_licenses.append({
+                    'box': current_box,
+                    'slot': int(slot_or_feature),
+                    'feature': parts[1].strip(),
+                    'parameters': parts[2].strip() if len(parts) > 2 else '-',
+                    'start_date': parts[3].strip() if len(parts) > 3 else '',
+                    'expiration': parts[4].strip() if len(parts) > 4 else '',
+                })
+            elif not is_slot_row:
+                # TA/chassis-style: feature, params, (start), expiry
+                gs_licenses.append({
+                    'box': current_box,
+                    'slot': 'chassis',
+                    'feature': slot_or_feature,
+                    'parameters': parts[1].strip() if len(parts) > 1 else '-',
+                    'start_date': parts[2].strip() if len(parts) > 2 else '',
+                    'expiration': parts[3].strip() if len(parts) > 3 else '',
+                })
+
     sorted_ports = sorted(port_data.keys(), key=natural_keys)
     
     if output_format == 'json':
@@ -276,6 +482,14 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
         json_payload = {"ports": output}
         if cluster_info["is_cluster"]:
             json_payload["cluster"] = cluster_info
+        # IP Interfaces
+        if ip_interfaces:
+            json_payload["ip_interfaces"] = ip_interfaces
+        if logical_ip_interfaces:
+            json_payload["logical_ip_interfaces"] = logical_ip_interfaces
+        # GigaSMART Licenses
+        if gs_licenses:
+            json_payload["gs_licenses"] = gs_licenses
         if show_summary:
             enabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "enabled")
             disabled_count = sum(1 for p in port_data.values() if p["Admin"].lower() == "disabled")
@@ -452,6 +666,44 @@ def parse_gigamon_diag(file_path, output_format='table', show_summary=True):
                 sfp_disp = sfp if len(sfp) <= 20 else sfp[:17] + '...'
                 print(f"{sfp_disp:<20} {row['total']:>7} {row['enabled']:>9} {row['enabled_up']:>11} {row['enabled_down']:>13}")
 
+            # IP Interfaces
+            if ip_interfaces:
+                print()
+                print("--- IP Interfaces (Physical) ---")
+                for iface in ip_interfaces:
+                    ip_str = iface.get('ip_mask', iface.get('ip_address', 'N/A'))
+                    admin = iface.get('admin_status', 'N/A')
+                    oper = iface.get('oper_status', 'N/A')
+                    speed = iface.get('speed', 'N/A')
+                    print(f"  {iface['name']:<20} {ip_str:<20} admin={admin:<5} oper={oper:<5} speed={speed}")
+                    if iface.get('secondary_address'):
+                        print(f"    alias: {iface['secondary_address']}")
+
+            if logical_ip_interfaces:
+                print()
+                print("--- IP Interfaces (Logical) ---")
+                for iface in logical_ip_interfaces:
+                    ip_str = iface.get('ip_mask', iface.get('ipv4', 'N/A'))
+                    ports = iface.get('ports', 'N/A')
+                    gs = iface.get('gsgroup', '')
+                    comment = iface.get('comment', '')
+                    print(f"  {iface['name']:<35} {ip_str:<20} ports={ports}")
+                    if gs:
+                        print(f"    gsgroup={gs}  exporter={iface.get('exporter', '')}")
+                    if comment and comment != '-':
+                        print(f"    {comment}")
+
+            # GigaSMART Licenses
+            if gs_licenses:
+                print()
+                print("--- GigaSMART Licenses ---")
+                for lic in gs_licenses:
+                    box_str = f"Box {lic['box']}" if lic['box'] else 'N/A'
+                    slot_str = str(lic['slot'])
+                    exp = lic.get('expiration', '')
+                    status = 'expired' if exp.lower() == 'expired' else ('perpetual' if exp.lower() == 'never' else exp)
+                    print(f"  {box_str:<8} slot={slot_str:<8} {lic['feature']:<20} status={status}")
+
         elif output_format == 'csv':
             print()
             print("SUMMARY,,,,,,,,")
@@ -496,7 +748,7 @@ def main():
     parser.add_argument('file', help='Path to the Gigamon show diag file')
     parser.add_argument('-f', '--format', choices=['table', 'csv', 'json'], default='table', help='Output format')
     parser.add_argument('--no-summary', action='store_true', help='Hide the summary counts')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 1.2.0')
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 1.3.0')
     
     args = parser.parse_args()
     
